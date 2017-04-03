@@ -75,7 +75,16 @@ TRAIN_DIR = os.path.join(DATA_DIR, 'Ms_Pacman/Train/')
 TEST_DIR = os.path.join(DATA_DIR, 'Ms_Pacman/Test/')
 # Directory of processed training clips.
 # hidden so finder doesn't freeze w/ so many files. DON'T USE `ls` COMMAND ON THIS DIR!
-TRAIN_DIR_CLIPS = get_dir(os.path.join(DATA_DIR, '.clips/'))
+TRAIN_DIR_CLIPS = get_dir(os.path.join(TRAIN_DIR, '.clips/'))
+
+# directory of unprocessed detection training frames
+TRK_TRAIN_DIR = os.path.join(DATA_DIR, 'Ms_Pacman/TrackTrain/')
+# directory of unprocessed detection test frames
+TRK_TEST_DIR = os.path.join(DATA_DIR, 'Ms_Pacman/TrackTest/')
+# Directory of processed detection training clips.
+# hidden so finder doesn't freeze w/ so many files. DON'T USE `ls` COMMAND ON THIS DIR!
+TRK_TRAIN_DIR_CLIPS = get_dir(os.path.join(TRK_TRAIN_DIR, '.targets/'))
+TRK_NUM_CLIPS = len(glob(TRK_TRAIN_DIR_CLIPS + '*_t.npz'))
 
 # For processing clips. l2 diff between frames must be greater than this
 MOVEMENT_THRESHOLD = 100
@@ -128,10 +137,10 @@ IMG_SAVE_DIR = get_dir(os.path.join(SAVE_DIR, 'Images/', SAVE_NAME))
 
 
 STATS_FREQ      = 10     # how often to print loss/train error stats, in # steps
-SUMMARY_FREQ    = 100    # how often to save the summaries, in # steps
-IMG_SAVE_FREQ   = 1000   # how often to save generated images, in # steps
-TEST_FREQ       = 5000   # how often to test the model on test data, in # steps
-MODEL_SAVE_FREQ = 10000  # how often to save the model, in # steps
+SUMMARY_FREQ    = 20    # how often to save the summaries, in # steps
+IMG_SAVE_FREQ   = 100   # how often to save generated images, in # steps
+TEST_FREQ       = 150   # how often to test the model on test data, in # steps
+MODEL_SAVE_FREQ = 200  # how often to save the model, in # steps
 
 ##
 # General training
@@ -140,9 +149,13 @@ MODEL_SAVE_FREQ = 10000  # how often to save the model, in # steps
 # whether to use adversarial training vs. basic training of the generator
 ADVERSARIAL = True
 # the training minibatch size
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 # the number of history frames to give as input to the network
 HIST_LEN = 4
+# Frames per clip
+NUM_FRAMES_PER_CLIP = 64
+# Num frames to test
+NUM_TEST_FRAMES = 10
 
 ##
 # Loss parameters
@@ -204,3 +217,30 @@ SCALE_FC_LAYER_SIZES_D = [[512, 256, 1],
                           [1024, 512, 1],
                           [1024, 512, 1],
                           [1024, 512, 1]]
+
+##
+# Detection model
+##
+
+# learning rate for the detection model
+LRATE_DET = 0.02
+# padding for convolutions in the detection model
+PADDING_DET = 'VALID'
+# feature maps for each convolution of each scale network in the detection model
+SCALE_CONV_FMS_DET = [[3, 64],
+                      [3, 64, 128, 128],
+                      [3, 128, 256, 256],
+                      [3, 128, 256, 512, 128]]
+# kernel sizes for each convolution of each scale network in the detection model
+SCALE_KERNEL_SIZES_DET = [[3],
+                          [3, 3, 3],
+                          [5, 5, 5],
+                          [7, 7, 5, 5]]
+# layer sizes for each fully-connected layer of each scale network in the detection model
+# layer connecting conv to fully-connected is dynamically generated when creating the model
+SCALE_FC_LAYER_SIZES_DET = [[512, 256],
+                            [1024, 512],
+                            [1024, 512],
+                            [1024, 512]]
+
+FINAL_FC_LAYER_SIZES_DET = [512, 3]

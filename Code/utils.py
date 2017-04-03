@@ -3,6 +3,7 @@ import numpy as np
 from scipy.ndimage import imread
 from glob import glob
 import os
+import json
 
 import constants as c
 from tfutils import log10
@@ -90,6 +91,60 @@ def get_full_clips(data_dir, num_clips, num_rec_out=1):
 
     return clips
 
+
+def get_full_tracked_frame(data_dir, image=None):
+    """
+    Loads a batch of random crop from the unprocessed train or test data.
+
+    @param data_dir: The directory of the data to read. Should be either c.TRAIN_DIR or c.TEST_DIR.
+       """
+    crop = np.empty([1,
+                     c.FULL_HEIGHT,
+                     c.FULL_WIDTH,
+                     3])
+
+    targets = np.empty(
+        [1, 1, 2]
+    )
+
+    # get num_clips random episodes
+    ep_dir = np.random.choice(glob(os.path.join(data_dir, "*")), 1)[0]
+
+    if image is not None:
+        ep_dir = os.path.dirname(image)
+
+
+    # Load frame target information
+    tgt_path = ep_dir + "-tgt.json"
+    tgt_path = tgt_path.replace('/Train/', '/TrackTrain/')
+    tgt_path = tgt_path.replace('/Test/', '/TrackTest/')
+
+    with open(tgt_path, 'r') as fp:
+        frame_targets = json.load(fp)
+
+    if image is not None:
+        crop_frame_path = image
+        crop_idx = next(i for i, f in enumerate(frame_targets)
+                        if os.path.basename(f[0]) == os.path.basename(image))
+
+    else:
+        ep_frame_paths = sorted(glob(os.path.join(ep_dir, '*')))
+        crop_idx = np.random.choice(len(ep_frame_paths) - 1)
+        crop_frame_path = ep_frame_paths[crop_idx]
+
+    assert(
+        os.path.basename(crop_frame_path) ==
+        os.path.basename(frame_targets[crop_idx][0])
+    )
+
+    frame = imread(crop_frame_path, mode='RGB')
+    norm_frame = normalize_frames(frame)
+    crop[0, :, :, :] = norm_frame
+    targets[0, :, :] = frame_targets[crop_idx][1]
+
+    return crop, targets, crop_frame_path
+
+
 def process_clip():
     """
     Gets a clip from the train dataset, cropped randomly to c.TRAIN_HEIGHT x c.TRAIN_WIDTH.
@@ -113,6 +168,67 @@ def process_clip():
 
     return cropped_clip
 
+
+def process_tracking_clip():
+    """
+    Gets a clip from the train dataset, cropped randomly to c.TRAIN_HEIGHT x c.TRAIN_WIDTH.
+
+    @return: An array of shape [c.TRAIN_HEIGHT, c.TRAIN_WIDTH, (3 * (c.HIST_LEN + 1))].
+             A frame sequence with values normalized in range [-1, 1].
+    """
+    clips, targets, path = get_full_tracked_frame(c.TRAIN_DIR)
+    clip, target = clips[0], targets[0]
+
+    # Randomly crop the clip. With 0.50 probability, take the first crop
+    # offered, otherwise, repeat until we have a clip with the target in it
+    take_first = np.random.choice(2, p=[0.50, 0.50])
+    cropped_clip = np.empty([c.TRAIN_HEIGHT, c.TRAIN_WIDTH, 3 * (c.HIST_LEN)])
+    cropped_target = np.empty([3], dtype=np.float32)
+
+    for i in range(100):  # cap at 100 trials in case the clip has no movement anywhere
+        crop_x = np.random.choice(c.FULL_WIDTH - c.TRAIN_WIDTH + 1)
+        crop_y = np.random.choice(c.FULL_HEIGHT - c.TRAIN_HEIGHT + 1)
+        cropped_clip = clip[crop_y:crop_y + c.TRAIN_HEIGHT,
+                            crop_x:crop_x + c.TRAIN_WIDTH, :]
+
+        tgt_x_pct = (target[-1, 0] - crop_x)/c.TRAIN_WIDTH
+        tgt_y_pct = (target[-1, 1] - crop_y)/c.TRAIN_HEIGHT
+        tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
+        tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
+
+        cropped_target[:] = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
+
+        if take_first or tgt_x_cnf * tgt_y_cnf:
+            break
+
+    return cropped_clip, cropped_target
+
+
+def get_tracking_train_batch():
+    """
+    Loads c.BATCH_SIZE clips from the database of preprocessed training clips.
+
+    @return: An array of shape
+            [c.BATCH_SIZE, c.TRAIN_HEIGHT, c.TRAIN_WIDTH, (3 * (c.HIST_LEN + 1))].
+    """
+    clips = np.empty([c.BATCH_SIZE, c.TRAIN_HEIGHT, c.TRAIN_WIDTH, 3],
+                     dtype=np.float32)
+    tgts = np.empty([c.BATCH_SIZE, 3])
+    for i in range(c.BATCH_SIZE):
+        c_path = c.TRK_TRAIN_DIR_CLIPS + str(np.random.choice(c.TRK_NUM_CLIPS))\
+                 + \
+                 '_c.npz'
+        t_path = c.TRK_TRAIN_DIR_CLIPS + str(np.random.choice(c.TRK_NUM_CLIPS)) + \
+                 '_t.npz'
+
+        clips[i] = np.load(c_path)['arr_0']
+        tgts[i] = np.load(t_path)['arr_0']
+
+        assert(clips.shape[3] == 3)
+
+    return clips, tgts
+
+
 def get_train_batch():
     """
     Loads c.BATCH_SIZE clips from the database of preprocessed training clips.
@@ -129,6 +245,64 @@ def get_train_batch():
         clips[i] = clip
 
     return clips
+
+def get_tracking_test_batch(batch_size, image=None):
+    img_crop_info = []
+    img_crops = []
+    img_crop_tgts = []
+
+    _imgs, _img_tgts, _img_path = get_full_tracked_frame(c.TRAIN_DIR,
+                                                         image=image)
+    img, img_tgt = _imgs[0], _img_tgts[0]
+
+    batch_index = 0
+    info_batch = np.zeros([c.BATCH_SIZE, 2])
+    img_batch = np.zeros([c.BATCH_SIZE, c.TRAIN_HEIGHT,
+                          c.TRAIN_WIDTH, 3], dtype=np.float32)
+    tgt_batch = np.zeros([c.BATCH_SIZE, 3])
+
+    for crop_x in range(0, c.FULL_WIDTH, c.TRAIN_WIDTH):
+        if crop_x > c.FULL_WIDTH - c.TRAIN_WIDTH:
+            crop_x = c.FULL_WIDTH - c.TRAIN_WIDTH
+
+        for crop_y in range(0, c.FULL_HEIGHT, c.TRAIN_HEIGHT):
+            if crop_y > c.FULL_HEIGHT - c.TRAIN_HEIGHT:
+                crop_y = c.FULL_HEIGHT - c.TRAIN_HEIGHT
+
+            crop_info = [crop_x, crop_y]
+            cropped_clip = img[crop_y:crop_y + c.TRAIN_HEIGHT,
+                               crop_x:crop_x + c.TRAIN_WIDTH, :]
+
+            tgt_x_pct = (img_tgt[-1, 0] - crop_x)/c.TRAIN_WIDTH
+            tgt_y_pct = (img_tgt[-1, 1] - crop_y)/c.TRAIN_HEIGHT
+            tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
+            tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
+
+            cropped_target = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
+
+            if batch_index < batch_size:
+                info_batch[batch_index] = crop_info
+                img_batch[batch_index] = cropped_clip
+                tgt_batch[batch_index] = cropped_target
+
+            if batch_index >= batch_size:
+                img_crop_info.append(info_batch)
+                img_crops.append(img_batch)
+                img_crop_tgts.append(tgt_batch)
+
+                batch_index = 0
+                info_batch = np.zeros([c.BATCH_SIZE, 2])
+                img_batch = np.zeros([c.BATCH_SIZE, c.TRAIN_HEIGHT,
+                                      c.TRAIN_WIDTH, 3], dtype=np.float32)
+                tgt_batch = np.zeros([c.BATCH_SIZE, 3])
+
+                info_batch[batch_index] = crop_info
+                img_batch[batch_index] = cropped_clip
+                tgt_batch[batch_index] = cropped_target
+
+            batch_index += 1
+
+    return img_crop_info, img_crops, img_crop_tgts, _img_path, img_tgt
 
 
 def get_test_batch(test_batch_size, num_rec_out=1):

@@ -116,3 +116,57 @@ def adv_loss(preds, labels):
 
     # condense into one tensor and avg
     return tf.reduce_mean(tf.stack(scale_losses))
+
+
+def cat_loss(preds, labels):
+    # calculate the categorical loss
+    cat_sel = tf.constant(np.array([[0], [0], [1]]), dtype=tf.float32)
+    pred_cat = tf.matmul(preds, cat_sel)
+    true_cat = tf.matmul(labels, cat_sel)
+    return bce_loss(
+        pred_cat, true_cat
+    )
+
+
+def pos_x_loss(preds, labels, lp=2):
+    # calculate the categorical loss
+    cat_sel = tf.constant(np.array([[0], [0], [1]]), dtype=tf.float32)
+    true_cat = tf.matmul(labels, cat_sel)
+
+    pos_x_sel = tf.constant(np.array([[1], [0], [0]]), dtype=tf.float32)
+    pos_x_pred = tf.matmul(preds, pos_x_sel)
+    pos_x_labels = tf.matmul(labels, pos_x_sel)
+    pos_x_loss = tf.matmul(tf.transpose(true_cat),
+                           tf.abs(pos_x_pred - pos_x_labels)**lp)
+
+    return tf.reduce_sum(pos_x_loss)
+
+
+def pos_y_loss(preds, labels, lp=2):
+    # calculate the categorical loss
+    cat_sel = tf.constant(np.array([[0], [0], [1]]), dtype=tf.float32)
+    true_cat = tf.matmul(labels, cat_sel)
+
+    pos_y_sel = tf.constant(np.array([[0], [1], [0]]), dtype=tf.float32)
+    pos_y_pred = tf.matmul(preds, pos_y_sel)
+    pos_y_labels = tf.matmul(labels, pos_y_sel)
+    pos_y_loss = tf.matmul(tf.transpose(true_cat),
+                           tf.abs(pos_y_pred - pos_y_labels)**lp)
+
+    return tf.reduce_sum(pos_y_loss)
+
+
+def trk_loss(preds, labels, lp=2, wgt_cat=1.0, wgt_pos=1.0):
+    """
+    Calculates the sum of BCE losses between the predicted classifications and true labels.
+
+    @param preds: The predicted classifications at each scale.
+    @param labels: The true labels. (Same for every scale).
+
+    @return: The adversarial loss.
+    """
+    return wgt_cat * cat_loss(preds, labels) + \
+           wgt_pos * (
+               pos_x_loss(preds, labels, lp) + pos_y_loss(preds, labels, lp)
+           )
+
