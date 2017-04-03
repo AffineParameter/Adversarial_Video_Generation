@@ -138,7 +138,7 @@ IMG_SAVE_DIR = get_dir(os.path.join(SAVE_DIR, 'Images/', SAVE_NAME))
 
 STATS_FREQ      = 10     # how often to print loss/train error stats, in # steps
 SUMMARY_FREQ    = 20    # how often to save the summaries, in # steps
-IMG_SAVE_FREQ   = 100   # how often to save generated images, in # steps
+IMG_SAVE_FREQ   = 20   # how often to save generated images, in # steps
 TEST_FREQ       = 150   # how often to test the model on test data, in # steps
 MODEL_SAVE_FREQ = 200  # how often to save the model, in # steps
 
@@ -223,7 +223,7 @@ SCALE_FC_LAYER_SIZES_D = [[512, 256, 1],
 ##
 
 # learning rate for the detection model
-LRATE_DET = 0.02
+LRATE_DET = 0.001
 # padding for convolutions in the detection model
 PADDING_DET = 'VALID'
 # feature maps for each convolution of each scale network in the detection model
@@ -238,7 +238,7 @@ SCALE_KERNEL_SIZES_DET = [[3],
                           [7, 7, 5, 5]]
 # layer sizes for each fully-connected layer of each scale network in the detection model
 # layer connecting conv to fully-connected is dynamically generated when creating the model
-SCALE_FC_LAYER_SIZES_DET = [[512, 256],
+SCALE_FC_LAYER_SIZES_DET = [[ 512, 256],
                             [1024, 512],
                             [1024, 512],
                             [1024, 512]]

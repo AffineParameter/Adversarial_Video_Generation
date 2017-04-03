@@ -4,6 +4,7 @@ from scipy.ndimage import imread
 from glob import glob
 import os
 import json
+import re
 
 import constants as c
 from tfutils import log10
@@ -204,6 +205,28 @@ def process_tracking_clip():
     return cropped_clip, cropped_target
 
 
+def get_tracking_memorize_batch():
+    """
+    Loads c.BATCH_SIZE clips from the database of preprocessed training clips.
+
+    @return: An array of shape
+            [c.BATCH_SIZE, c.TRAIN_HEIGHT, c.TRAIN_WIDTH, (3 * (c.HIST_LEN + 1))].
+    """
+    clips = np.empty([c.BATCH_SIZE, c.TRAIN_HEIGHT, c.TRAIN_WIDTH, 3],
+                     dtype=np.float32)
+    tgts = np.empty([c.BATCH_SIZE, 3])
+    for i in range(c.BATCH_SIZE):
+        c_path = c.TRK_TRAIN_DIR_CLIPS + '1_c.npz'
+        t_path = c_path.replace('_c.npz', '_t.npz')
+
+        clips[i] = np.load(c_path)['arr_0']
+        tgts[i] = np.load(t_path)['arr_0']
+
+        assert(clips.shape[3] == 3)
+
+    return clips, tgts
+
+
 def get_tracking_train_batch():
     """
     Loads c.BATCH_SIZE clips from the database of preprocessed training clips.
@@ -300,6 +323,29 @@ def get_tracking_test_batch(batch_size, image=None):
 
             batch_index += 1
 
+    # Fill the remaining elements in this batch with random crops!
+    for i in range(batch_index, batch_size):
+        crop_x = np.random.choice(c.FULL_WIDTH - c.TRAIN_WIDTH + 1)
+        crop_y = np.random.choice(c.FULL_HEIGHT - c.TRAIN_HEIGHT + 1)
+        crop_info = [crop_x, crop_y]
+        cropped_clip = img[crop_y:crop_y + c.TRAIN_HEIGHT,
+                           crop_x:crop_x + c.TRAIN_WIDTH, :]
+
+        tgt_x_pct = (img_tgt[-1, 0] - crop_x) / c.TRAIN_WIDTH
+        tgt_y_pct = (img_tgt[-1, 1] - crop_y) / c.TRAIN_HEIGHT
+        tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
+        tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
+
+        cropped_target = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
+
+        info_batch[i] = crop_info
+        img_batch[i] = cropped_clip
+        tgt_batch[i] = cropped_target
+
+    img_crop_info.append(info_batch)
+    img_crops.append(img_batch)
+    img_crop_tgts.append(tgt_batch)
+
     return img_crop_info, img_crops, img_crop_tgts, _img_path, img_tgt
 
 
@@ -382,3 +428,70 @@ def sharp_diff_error(gen_frames, gt_frames):
 
     batch_errors = 10 * log10(1 / ((1 / num_pixels) * tf.reduce_sum(grad_diff, [1, 2, 3])))
     return tf.reduce_mean(batch_errors)
+
+
+def create_smart_saver(weights, mute_variables):
+    r"""
+    By default, TensorFlow's Saver loads all variables in a checkpoint file
+    to all variables in the current session. This creates a Saver that will
+    only load a weight if it's asked for by the current session, AND not load
+    weights that aren't asked for by the current session.
+    Parameters
+    ----------
+    weights : str
+        Path to initial weights file.
+    mute_variables : list[str]
+        List of variables to ignore when loading from the weight file.
+        Use when you change the shape of a layer, and don't want to use
+        the weights for that layer from a weight file.
+    Returns
+    -------
+    saver : tf.train.Saver
+        TensorFlow Saver that won't run into extra/missing variables problems.
+    """
+    saved_variables = tf.contrib.framework.list_variables(weights)
+    desired_variables = tf.global_variables()
+    saved_names = set([n for n, _ in saved_variables])
+    desired_names = set([_clean_name(v.name) for v in desired_variables])
+
+    true_mute = set()
+    for m in mute_variables:
+        m = _clean_name(m)
+        for d in desired_names:
+            v = re.match(m, d)
+            if v is not None:
+                true_mute.add(v.string)
+
+    clean_mute = [_clean_name(n) for n in true_mute]
+    desired_names = desired_names.difference(clean_mute)
+    matched_names = saved_names.intersection(desired_names)
+    for name in desired_names:
+        if name not in matched_names:
+            print("Tried to load {variable} but not found in {weights}."
+                        " Using default initializer.".format(variable=name,
+                                                             weights=weights))
+    for name in saved_names:
+        if name not in matched_names:
+            print("{variable} from weight file ignored.".format(
+                variable=name))
+    final_variables = [v for v in tf.global_variables()
+                       if _clean_name(v.name) in matched_names]
+
+    return tf.train.Saver(var_list=final_variables)
+
+
+def _clean_name(name):
+    r"""
+    Gets rid of :0 at the end of TensorFlow variable names.
+    Parameters
+    ----------
+    name : str
+        TensorFlow variable name.
+    Returns
+    -------
+    clean_name : str
+        TensorFlow variable name without ":0" at the end
+    """
+    if re.search(':0$', name):
+        return name[:-2]
+    return name

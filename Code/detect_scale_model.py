@@ -131,7 +131,7 @@ class DetScaleModel:
                 preds = tf.reshape(preds, [-1, shape[1] * shape[2] * shape[3]])
 
                 # fully-connected layers
-                with tf.name_scope('fully-connected'):
+                with tf.name_scope('full-connected'):
                     for i in range(len(fc_ws)):
                         preds = tf.matmul(preds, fc_ws[i]) + fc_bs[i]
 

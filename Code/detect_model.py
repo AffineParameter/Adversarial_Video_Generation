@@ -97,7 +97,9 @@ class DetectionModel:
                                       c.FINAL_FC_LAYER_SIZES_DET[0]])
 
                     for i, scale_fc in enumerate(self.scale_last_fc):
-                        nl_fc += tf.matmul(scale_fc, ffc_ws[i]) + ffc_bs[i]
+                        nl_fc = tf.add(nl_fc,
+                                       tf.matmul(scale_fc, ffc_ws[i]) +
+                                       ffc_bs[i])
 
                     # Next To last Layer
                     nl_fca = tf.nn.relu(nl_fc)
@@ -315,7 +317,6 @@ class DetectionModel:
         print('  pix acc_top3 : %f' % (min_dr_n[2],))
         self.summary_writer.add_summary(summaries, global_step)
 
-
     def test_image(self, img, top_n=1):
 
         img_crop_info, img_crops, img_crop_tgts, _img_path, _img_tgt = \
@@ -324,18 +325,17 @@ class DetectionModel:
         targets = []
         for i in range(len(img_crop_tgts)):
             feed_dict = self.build_feed_dict(img_crops[i], img_crop_tgts[i])
-
             preds = self.sess.run([self.preds], feed_dict=feed_dict)[0]
             for j, p in enumerate(preds):
                 targets.append(
                     (
-                        p[0] * c.TRAIN_WIDTH + img_crop_info[i][j, 0],
-                        p[1] * c.TRAIN_HEIGHT + img_crop_info[i][j, 1],
+                        p[0] * c.TRAIN_WIDTH + img_crop_info[i][j][0],
+                        p[1] * c.TRAIN_HEIGHT + img_crop_info[i][j][1],
                         p[2],  # Confidence
                     )
                 )
 
-        return sorted(targets, key=lambda x: x[2])[:top_n], _img_tgt
+        return sorted(targets, key=lambda x: x[2])[:top_n], _img_tgt, img_crop_info
 
     def get_pix_accuracy(self, dir, top_n=1):
         ep_dir = np.random.choice(glob(os.path.join(dir, "*")), 1)[0]
@@ -343,7 +343,7 @@ class DetectionModel:
         r = np.random.choice(len(files) - c.NUM_TEST_FRAMES)
         results = []
         for f in files[r:r + c.NUM_TEST_FRAMES]:
-            results.append(self.test_image(f, top_n=top_n))
+            results.append(self.test_image(f, top_n=top_n)[0:2])
 
         mean_distances = [0] * top_n
         for i in range(top_n):
@@ -359,22 +359,26 @@ class DetectionModel:
 
     def gen_image(self, ax, img, dir):
 
-        targets, _img_tgt = self.test_image(img, top_n=3)
+        targets, _img_tgt, img_crops = self.test_image(img, top_n=3)
         img_bgr = cv2.imread(img, 1)
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         ax.clear()
         ax.imshow(img_rgb, interpolation='nearest')
+        # ax.scatter([i[0] for b in img_crops for i in b],
+        #            [i[1] for b in img_crops for i in b],
+        #            marker='+', color='yellow')
+
         ax.scatter(_img_tgt[0][1], _img_tgt[0][0],
-                   marker='o', color='blue',
+                   marker='o', color='blue', edgecolor='black',
                    label="GT")
         ax.scatter(targets[0][1], targets[0][0],
-                   marker='+', color='green',
+                   marker='x', color='green',
                    label="C:{:.2f}".format(targets[0][2]))
         ax.scatter(targets[1][1], targets[1][0],
-                   marker='+', color='orange',
+                   marker='x', color='orange',
                    label="C:{:.2f}".format(targets[1][2]))
         ax.scatter(targets[2][1], targets[2][0],
-                   marker='+', color='red',
+                   marker='x', color='red',
                    label="C:{:.2f}".format(targets[2][2]))
         ax.legend()
 

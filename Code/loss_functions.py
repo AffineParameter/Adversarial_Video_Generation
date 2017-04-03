@@ -136,8 +136,8 @@ def pos_x_loss(preds, labels, lp=2):
     pos_x_sel = tf.constant(np.array([[1], [0], [0]]), dtype=tf.float32)
     pos_x_pred = tf.matmul(preds, pos_x_sel)
     pos_x_labels = tf.matmul(labels, pos_x_sel)
-    pos_x_loss = tf.matmul(tf.transpose(true_cat),
-                           tf.abs(pos_x_pred - pos_x_labels)**lp)
+    pos_x_loss = tf.matmul(true_cat, tf.abs(pos_x_pred - pos_x_labels)**lp,
+                           transpose_a=True)
 
     return tf.reduce_sum(pos_x_loss)
 
@@ -150,8 +150,8 @@ def pos_y_loss(preds, labels, lp=2):
     pos_y_sel = tf.constant(np.array([[0], [1], [0]]), dtype=tf.float32)
     pos_y_pred = tf.matmul(preds, pos_y_sel)
     pos_y_labels = tf.matmul(labels, pos_y_sel)
-    pos_y_loss = tf.matmul(tf.transpose(true_cat),
-                           tf.abs(pos_y_pred - pos_y_labels)**lp)
+    pos_y_loss = tf.matmul(true_cat, tf.abs(pos_y_pred - pos_y_labels)**lp,
+                           transpose_a=True)
 
     return tf.reduce_sum(pos_y_loss)
 
@@ -169,4 +169,7 @@ def trk_loss(preds, labels, lp=2, wgt_cat=1.0, wgt_pos=1.0):
            wgt_pos * (
                pos_x_loss(preds, labels, lp) + pos_y_loss(preds, labels, lp)
            )
+
+
+
 

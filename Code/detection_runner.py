@@ -3,7 +3,8 @@ import getopt
 import sys
 import os
 
-from utils import get_tracking_train_batch, get_tracking_test_batch
+from utils import get_tracking_train_batch, get_tracking_test_batch, \
+    create_smart_saver, get_tracking_memorize_batch
 import constants as c
 from detect_model import DetectionModel
 
@@ -39,7 +40,9 @@ class DetectionRunner:
 
         # if load path specified, load a saved model
         if model_load_path is not None:
-            self.saver.restore(self.sess, model_load_path)
+            smart_saver = create_smart_saver(model_load_path,
+                                             mute_variables=[])
+            smart_saver.restore(self.sess, model_load_path)
             print('Model restored from ' + model_load_path)
 
     def train(self):
@@ -71,6 +74,30 @@ class DetectionRunner:
         """
         self.detect_model.test_step(self.global_step)
 
+    def memorize(self):
+        """
+        Runs a training loop on the model networks.
+        """
+        for i in range(self.num_steps):
+            # update discriminator
+            batch_c, batch_t = get_tracking_memorize_batch()
+            self.global_step = self.detect_model.train_step(batch_c, batch_t)
+
+            # save the models
+            if self.global_step % c.MODEL_SAVE_FREQ == 0:
+                print('-' * 30)
+                print('Saving {}-iteration models...'.format(self.global_step))
+                self.saver.save(self.sess,
+                                c.MODEL_SAVE_DIR + 'detect_model.ckpt',
+                                global_step=self.global_step)
+                print('Saved models!')
+                print('-' * 30)
+
+            # test generator model
+            if self.global_step % c.TEST_FREQ == 0:
+                self.test()
+
+
 
 def usage():
     print('Options:')
@@ -97,13 +124,14 @@ def main():
 
     load_path = None
     test_only = False
+    memorize = False
     num_steps = 1000001
     try:
         opts, _ = getopt.getopt(sys.argv[1:], 'l:t:r:a:n:s:OTH',
                                 ['load_path=', 'test_dir=', 'recursions=', 'adversarial=', 'name=',
                                  'steps=', 'overwrite', 'test_only', 'help', 'stats_freq=',
                                  'summary_freq=', 'img_save_freq=', 'test_freq=',
-                                 'model_save_freq='])
+                                 'model_save_freq=', 'memorize'])
     except getopt.GetoptError:
         usage()
         sys.exit(2)
@@ -138,6 +166,8 @@ def main():
             c.TEST_FREQ = int(arg)
         if opt == '--model_save_freq':
             c.MODEL_SAVE_FREQ = int(arg)
+        if opt == '--memorize':
+            memorize = True
 
     # set test frame dimensions
     assert os.path.exists(c.TEST_DIR)
@@ -147,8 +177,13 @@ def main():
     # Init and run the predictor
     ##
     runner = DetectionRunner(num_steps, load_path)
-    if test_only:
+
+    if memorize:
+        runner.memorize()
+
+    elif test_only:
         runner.test()
+
     else:
         runner.train()
 
