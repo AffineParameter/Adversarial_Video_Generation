@@ -324,6 +324,7 @@ class DetectionModel:
         targets = []
         for i in range(len(img_crop_tgts)):
             feed_dict = self.build_feed_dict(img_crops[i], img_crop_tgts[i])
+
             preds = self.sess.run([self.preds], feed_dict=feed_dict)[0]
             for j, p in enumerate(preds):
                 targets.append(
@@ -333,8 +334,6 @@ class DetectionModel:
                         p[2],  # Confidence
                     )
                 )
-                print(_img_path)
-                print(sorted(targets, key=lambda x: x[2])[:top_n])
 
         return sorted(targets, key=lambda x: x[2])[:top_n], _img_tgt
 
