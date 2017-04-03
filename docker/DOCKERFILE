@@ -4,4 +4,4 @@ MAINTAINER Austin Basye <austin.basye@hudl.com>
 
 # Install ffmpeg
 RUN apt-get update -y && apt-get -y install ffmpeg
-RUN pip install scikit-image
+RUN pip install scikit-image==0.12.3

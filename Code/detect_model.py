@@ -328,13 +328,15 @@ class DetectionModel:
             for j, p in enumerate(preds):
                 targets.append(
                     (
-                        p[2],  # Confidence
                         p[0] * c.TRAIN_WIDTH + img_crop_info[i][j, 0],
-                        p[1] * c.TRAIN_HEIGHT + img_crop_info[i][j, 1]
+                        p[1] * c.TRAIN_HEIGHT + img_crop_info[i][j, 1],
+                        p[2],  # Confidence
                     )
                 )
+                print(_img_path)
+                print(sorted(targets, key=lambda x: x[2])[:top_n])
 
-        return sorted(targets, key=lambda x: x[0])[:top_n], _img_tgt
+        return sorted(targets, key=lambda x: x[2])[:top_n], _img_tgt
 
     def get_pix_accuracy(self, dir, top_n=1):
         ep_dir = np.random.choice(glob(os.path.join(dir, "*")), 1)[0]
@@ -366,15 +368,15 @@ class DetectionModel:
         ax.scatter(_img_tgt[0][1], _img_tgt[0][0],
                    marker='o', color='blue',
                    label="GT")
-        ax.scatter(targets[0][2], targets[0][1],
+        ax.scatter(targets[0][1], targets[0][0],
                    marker='+', color='green',
-                   label="C:{:.2f}".format(targets[0][0]))
-        ax.scatter(targets[1][2], targets[1][1],
+                   label="C:{:.2f}".format(targets[0][2]))
+        ax.scatter(targets[1][1], targets[1][0],
                    marker='+', color='orange',
-                   label="C:{:.2f}".format(targets[1][0]))
-        ax.scatter(targets[2][2], targets[2][1],
+                   label="C:{:.2f}".format(targets[1][2]))
+        ax.scatter(targets[2][1], targets[2][0],
                    marker='+', color='red',
-                   label="C:{:.2f}".format(targets[2][0]))
+                   label="C:{:.2f}".format(targets[2][2]))
         ax.legend()
 
         basename, ext = os.path.splitext(img)

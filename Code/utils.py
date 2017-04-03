@@ -215,11 +215,9 @@ def get_tracking_train_batch():
                      dtype=np.float32)
     tgts = np.empty([c.BATCH_SIZE, 3])
     for i in range(c.BATCH_SIZE):
-        c_path = c.TRK_TRAIN_DIR_CLIPS + str(np.random.choice(c.TRK_NUM_CLIPS))\
-                 + \
-                 '_c.npz'
-        t_path = c.TRK_TRAIN_DIR_CLIPS + str(np.random.choice(c.TRK_NUM_CLIPS)) + \
-                 '_t.npz'
+        c_path = c.TRK_TRAIN_DIR_CLIPS + \
+                 str(np.random.choice(c.TRK_NUM_CLIPS)) + '_c.npz'
+        t_path = c_path.replace('_c.npz', '_t.npz')
 
         clips[i] = np.load(c_path)['arr_0']
         tgts[i] = np.load(t_path)['arr_0']
