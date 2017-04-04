@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 from skimage.transform import resize
 
+import matplotlib.animation as manimation
+
 from detect_scale_model import DetScaleModel
 from loss_functions import cat_loss, pos_x_loss, pos_y_loss, trk_loss
 from tfutils import w, b
@@ -268,12 +270,21 @@ class DetectionModel:
                                               'Step_' + str(global_step),
                                               "imgs")
                                  )
-            fig = plt.figure()
-            ax = plt.gca()
+
+            FFMpegWriter = manimation.writers['ffmpeg']
+            metadata = dict(title='Target Validation', artist='Matplotlib')
+            writer = FFMpegWriter(fps=10, metadata=metadata)
+            fig, ax = plt.subplots(1, 1)
+            fig.suptitle(
+                'GAN-Tracker Validation: {} Iterations'.format(global_step))
+
             files = sorted(glob(os.path.join(ep_dir, '*')))
             r = np.random.choice(len(files) - c.NUM_FRAMES_PER_CLIP)
-            for f in files[r:r+c.NUM_FRAMES_PER_CLIP]:
-                self.gen_image(ax, f, save_dir)
+            with writer.saving(fig, os.path.join(save_dir, 'animation.mp4'),
+                               100):
+                for f in files[r:r+c.NUM_FRAMES_PER_CLIP]:
+                    self.gen_image(ax, f, writer=writer)
+
             plt.close(fig)
             print("Images Saved!...")
 
@@ -341,7 +352,9 @@ class DetectionModel:
                     )
                 )
 
-        return sorted(targets, key=lambda x: x[2])[:top_n], _img_tgt, img_crop_info
+        # Descending sort by confidence
+        return sorted(targets, key=lambda x: -x[2])[:top_n], \
+               _img_tgt, img_crop_info
 
     def get_pix_accuracy(self, dir, top_n=1):
         ep_dir = np.random.choice(glob(os.path.join(dir, "*")), 1)[0]
@@ -363,7 +376,7 @@ class DetectionModel:
 
         return mean_distances
 
-    def gen_image(self, ax, img, dir):
+    def gen_image(self, ax, img, dir="./", writer=None):
 
         targets, _img_tgt, img_crops = self.test_image(img, top_n=3)
         img_bgr = cv2.imread(img, 1)
@@ -387,10 +400,14 @@ class DetectionModel:
                    label="C:{:.2f}".format(targets[2][2]))
         ax.legend()
 
-        basename, ext = os.path.splitext(img)
-        name = os.path.basename(basename)
-        out_path = os.path.join(dir, "trk_" + name + ".png")
-        print("Saving Figure: {}".format(out_path))
-        plt.gcf().savefig(out_path)
+        if writer is None:
+            basename, ext = os.path.splitext(img)
+            name = os.path.basename(basename)
+            out_path = os.path.join(dir, "trk_" + name + ".png")
+            print("Saving Figure: {}".format(out_path))
+            plt.gcf().savefig(out_path)
+        else:
+            print("Rendering Figure: {}".format(os.path.basename(img)))
+            writer.grab_frame()
 
         # get num_clips random episodes

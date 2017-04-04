@@ -223,11 +223,11 @@ SCALE_FC_LAYER_SIZES_D = [[512, 256, 1],
 ##
 
 # learning rate for the detection model
-LRATE_DET = 0.001
+LRATE_DET = 0.0001
 
 # Loss weights
 DET_WGT_CAT = 1.0
-DET_WGT_POS = 7.0
+DET_WGT_POS = 4.0
 
 # padding for convolutions in the detection model
 PADDING_DET = 'VALID'
