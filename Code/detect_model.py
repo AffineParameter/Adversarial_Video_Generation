@@ -369,7 +369,7 @@ class DetectionModel:
         # ax.scatter([i[1] for b in img_crops for i in b],
         #            [i[0] for b in img_crops for i in b],
         #            marker='+', color='yellow')
-        ax.scatter(_img_tgt[1], _img_tgt[0],
+        ax.scatter(_img_tgt[0], _img_tgt[1],
                    marker='o', color='blue', edgecolor='black',
                    label="GT")
         ax.scatter(targets[0][0], targets[0][1],
