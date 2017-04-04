@@ -123,8 +123,9 @@ def cat_loss(preds, labels):
     cat_sel = tf.constant(np.array([[0], [0], [1]]), dtype=tf.float32)
     pred_cat = tf.matmul(preds, cat_sel)
     true_cat = tf.matmul(labels, cat_sel)
+    pred_cat_normed = tf.clip_by_value(pred_cat, 0.1, 0.9)
     return bce_loss(
-        pred_cat, true_cat
+        pred_cat_normed, true_cat
     )
 
 

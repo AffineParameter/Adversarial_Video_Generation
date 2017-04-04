@@ -3,9 +3,76 @@ import getopt
 import sys
 from glob import glob
 import os
+import cv2
+import json
 
 import constants as c
 from utils import process_tracking_clip
+
+
+def process_image(path, bgr_cuts):
+    img_bgr = cv2.imread(path, 1)
+    mask = img_bgr[:, :, 0] > -1
+
+    mask = np.logical_and(mask, img_bgr[:, :, 0] >= bgr_cuts[0][0])
+    mask = np.logical_and(mask, img_bgr[:, :, 0] <= bgr_cuts[0][1])
+
+    mask = np.logical_and(mask, img_bgr[:, :, 1] >= bgr_cuts[1][0])
+    mask = np.logical_and(mask, img_bgr[:, :, 1] <= bgr_cuts[1][1])
+
+    mask = np.logical_and(mask, img_bgr[:, :, 2] >= bgr_cuts[2][0])
+    mask = np.logical_and(mask, img_bgr[:, :, 2] <= bgr_cuts[2][1])
+
+    net_p = np.sum(mask[:, :] == True)
+    if net_p == 0:
+        return [-2, -2]
+
+    y, x = np.mean(np.argwhere(mask[:, :] == True), axis=0).tolist()
+    std_y, std_x = np.std(np.argwhere(mask[:, :] == True), axis=0).tolist()
+
+    if std_y < 5.:
+        if x < mask.shape[1] / 2:
+            mask[:, -50:] = False
+        else:
+            mask[:, :50] = False
+
+        y, x = np.mean(np.argwhere(mask[:, :] == True), axis=0).tolist()
+        std_y, std_x = np.std(np.argwhere(mask[:, :] == True), axis=0).tolist()
+
+    if std_y**2 + std_x**2 > 25.:
+        return [-1, -1]
+
+    return [x, y]
+
+
+def process_images(dataset, outdir):
+    for root, clips, frames in os.walk(dataset):
+        if len(frames) and frames[0].endswith('.png'):
+            # print("Processing Frames From Clip: " + os.path.basename(root))
+
+            frame_target = []
+            for frame in frames:
+                frame_path = os.path.join(root, frame)
+
+                x, y = process_image(frame_path,
+                                     [[70, 150], [163, 165],  [206, 214]])
+
+                frame_target.append(
+                    (frame, [x, y])
+                )
+
+            frame_target = sorted(frame_target, key=lambda x: x[0])
+            f_name = os.path.basename(root + '-tgt.json')
+            outpath = os.path.join(outdir, f_name)
+
+            with open(outpath, 'w') as fp:
+                json.dump(frame_target, fp)
+            print("Targets here: {}".format(outpath))
+
+
+def get_tracking_targets():
+    process_images(c.TEST_DIR, c.TRK_TEST_DIR)
+    process_images(c.TRAIN_DIR, c.TRK_TRAIN_DIR)
 
 
 def process_training_data(num_clips):
@@ -19,13 +86,14 @@ def process_training_data(num_clips):
     """
     num_prev_clips = len(glob(c.TRK_TRAIN_DIR_CLIPS + '*'))
 
-    for clip_num in range(num_prev_clips, num_clips + num_prev_clips):
-        clip, tgt = process_tracking_clip()
+    for frame_num in range(num_prev_clips, num_clips + num_prev_clips):
+        frame, tgt = process_tracking_clip()
 
-        np.savez_compressed(c.TRK_TRAIN_DIR_CLIPS + str(clip_num) + '_c', clip)
-        np.savez_compressed(c.TRK_TRAIN_DIR_CLIPS + str(clip_num) + '_t', tgt)
+        np.savez_compressed(c.TRK_TRAIN_DIR_CLIPS + str(frame_num) + '_c', frame)
+        np.savez_compressed(c.TRK_TRAIN_DIR_CLIPS + str(frame_num) + '_t', tgt)
 
-        if (clip_num + 1) % 100 == 0: print('Processed %d clips' % (clip_num + 1))
+        if (frame_num + 1) % 100 == 0:
+            print('Processed %d clips' % (frame_num + 1))
 
 
 def usage():
@@ -48,7 +116,8 @@ def main():
 
     try:
         opts, _ = getopt.getopt(sys.argv[1:], 'n:t:c:oH',
-                                ['num_clips=', 'train_dir=', 'clips_dir=', 'overwrite', 'help'])
+                                ['num_clips=', 'train_dir=', 'clips_dir=',
+                                 'overwrite', 'track', 'help'])
     except getopt.GetoptError:
         usage()
         sys.exit(2)
@@ -57,11 +126,13 @@ def main():
         if opt in ('-n', '--num_clips'):
             num_clips = int(arg)
         if opt in ('-t', '--train_dir'):
-            c.TRK_TRAIN_DIR = c.get_dir(arg)
+            c.TRAIN_DIR = c.get_dir(arg)
         if opt in ('-c', '--clips_dir'):
             c.TRK_TRAIN_DIR_CLIPS = c.get_dir(arg)
         if opt in ('-o', '--overwrite'):
             c.clear_dir(c.TRK_TRAIN_DIR_CLIPS)
+        if opt in ('-H', '--track'):
+            get_tracking_targets()
         if opt in ('-H', '--help'):
             usage()
             sys.exit(2)

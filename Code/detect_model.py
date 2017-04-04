@@ -119,7 +119,9 @@ class DetectionModel:
             ##
             with tf.name_scope('training'):
                 # global loss is the combined loss from every scale network
-                self.global_loss = trk_loss(self.preds, self.labels)
+                self.global_loss = trk_loss(self.preds, self.labels,
+                                            wgt_cat=c.DET_WGT_CAT,
+                                            wgt_pos=c.DET_WGT_POS)
                 self.global_step = tf.Variable(0, trainable=False, name='global_step')
                 self.optimizer = tf.train.GradientDescentOptimizer(
                     c.LRATE_DET, name='optimizer')
@@ -349,8 +351,8 @@ class DetectionModel:
         for i in range(top_n):
             for pred, tgt in results:
                 _pred = np.array(pred)
-                dx2 = np.min((_pred[0:i+1, 0] - tgt[0][0])**2)
-                dy2 = np.min((_pred[0:i+1, 1] - tgt[0][1])**2)
+                dx2 = np.min((_pred[0:i+1, 0] - tgt[0])**2)
+                dy2 = np.min((_pred[0:i+1, 1] - tgt[1])**2)
                 mean_distances[i] += np.sqrt(dx2 + dy2)
 
             mean_distances[i] /= c.NUM_TEST_FRAMES
@@ -364,20 +366,19 @@ class DetectionModel:
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         ax.clear()
         ax.imshow(img_rgb, interpolation='nearest')
-        # ax.scatter([i[0] for b in img_crops for i in b],
-        #            [i[1] for b in img_crops for i in b],
+        # ax.scatter([i[1] for b in img_crops for i in b],
+        #            [i[0] for b in img_crops for i in b],
         #            marker='+', color='yellow')
-
-        ax.scatter(_img_tgt[0][1], _img_tgt[0][0],
+        ax.scatter(_img_tgt[1], _img_tgt[0],
                    marker='o', color='blue', edgecolor='black',
                    label="GT")
-        ax.scatter(targets[0][1], targets[0][0],
+        ax.scatter(targets[0][0], targets[0][1],
                    marker='x', color='green',
                    label="C:{:.2f}".format(targets[0][2]))
-        ax.scatter(targets[1][1], targets[1][0],
+        ax.scatter(targets[1][0], targets[1][1],
                    marker='x', color='orange',
                    label="C:{:.2f}".format(targets[1][2]))
-        ax.scatter(targets[2][1], targets[2][0],
+        ax.scatter(targets[2][0], targets[2][1],
                    marker='x', color='red',
                    label="C:{:.2f}".format(targets[2][2]))
         ax.legend()

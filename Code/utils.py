@@ -5,6 +5,7 @@ from glob import glob
 import os
 import json
 import re
+from matplotlib import pylab as plt
 
 import constants as c
 from tfutils import log10
@@ -99,13 +100,12 @@ def get_full_tracked_frame(data_dir, image=None):
 
     @param data_dir: The directory of the data to read. Should be either c.TRAIN_DIR or c.TEST_DIR.
        """
-    crop = np.empty([1,
-                     c.FULL_HEIGHT,
-                     c.FULL_WIDTH,
-                     3])
+    frame_array = np.empty([c.FULL_HEIGHT,
+                            c.FULL_WIDTH,
+                            3])
 
     targets = np.empty(
-        [1, 1, 2]
+        [2]
     )
 
     # get num_clips random episodes
@@ -124,26 +124,29 @@ def get_full_tracked_frame(data_dir, image=None):
         frame_targets = json.load(fp)
 
     if image is not None:
-        crop_frame_path = image
-        crop_idx = next(i for i, f in enumerate(frame_targets)
-                        if os.path.basename(f[0]) == os.path.basename(image))
+        frame_path = image
+        frame_idx = next(i for i, f in enumerate(frame_targets)
+                         if os.path.basename(f[0]) == os.path.basename(image))
 
     else:
         ep_frame_paths = sorted(glob(os.path.join(ep_dir, '*')))
-        crop_idx = np.random.choice(len(ep_frame_paths) - 1)
-        crop_frame_path = ep_frame_paths[crop_idx]
+        frame_idx = np.random.choice(len(ep_frame_paths) - 1)
+        frame_path = ep_frame_paths[frame_idx]
 
     assert(
-        os.path.basename(crop_frame_path) ==
-        os.path.basename(frame_targets[crop_idx][0])
+        os.path.basename(frame_path) ==
+        os.path.basename(frame_targets[frame_idx][0])
     )
 
-    frame = imread(crop_frame_path, mode='RGB')
+    frame = imread(frame_path, mode='RGB')
     norm_frame = normalize_frames(frame)
-    crop[0, :, :, :] = norm_frame
-    targets[0, :, :] = frame_targets[crop_idx][1]
+    frame_array[:, :, :] = norm_frame
+    targets[:] = frame_targets[frame_idx][1]
 
-    return crop, targets, crop_frame_path
+    assert(targets[0] < c.FULL_WIDTH)
+    assert(targets[1] < c.FULL_HEIGHT)
+
+    return frame_array, targets, frame_path
 
 
 def process_clip():
@@ -177,31 +180,32 @@ def process_tracking_clip():
     @return: An array of shape [c.TRAIN_HEIGHT, c.TRAIN_WIDTH, (3 * (c.HIST_LEN + 1))].
              A frame sequence with values normalized in range [-1, 1].
     """
-    clips, targets, path = get_full_tracked_frame(c.TRAIN_DIR)
-    clip, target = clips[0], targets[0]
+    frame, tgt, path = get_full_tracked_frame(c.TRAIN_DIR)
+    #test_tracking_input(frame, tgt.tolist() + [1.0], rel=False)
 
     # Randomly crop the clip. With 0.50 probability, take the first crop
     # offered, otherwise, repeat until we have a clip with the target in it
-    take_first = np.random.choice(2, p=[0.50, 0.50])
+    target_present = np.random.choice(2, p=[0.50, 0.50])
     cropped_clip = np.empty([c.TRAIN_HEIGHT, c.TRAIN_WIDTH, 3 * (c.HIST_LEN)])
     cropped_target = np.empty([3], dtype=np.float32)
 
-    for i in range(100):  # cap at 100 trials in case the clip has no movement anywhere
+    for i in range(100):  # cap at 100 trials
         crop_x = np.random.choice(c.FULL_WIDTH - c.TRAIN_WIDTH + 1)
         crop_y = np.random.choice(c.FULL_HEIGHT - c.TRAIN_HEIGHT + 1)
-        cropped_clip = clip[crop_y:crop_y + c.TRAIN_HEIGHT,
-                            crop_x:crop_x + c.TRAIN_WIDTH, :]
+        cropped_clip = frame[crop_y:crop_y + c.TRAIN_HEIGHT,
+                             crop_x:crop_x + c.TRAIN_WIDTH, :]
 
-        tgt_x_pct = (target[-1, 0] - crop_x)/c.TRAIN_WIDTH
-        tgt_y_pct = (target[-1, 1] - crop_y)/c.TRAIN_HEIGHT
+        tgt_x_pct = (tgt[0] - crop_x)/c.TRAIN_WIDTH
+        tgt_y_pct = (tgt[1] - crop_y)/c.TRAIN_HEIGHT
         tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
         tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
 
         cropped_target[:] = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
 
-        if take_first or tgt_x_cnf * tgt_y_cnf:
+        if target_present and tgt_x_cnf * tgt_y_cnf:
             break
 
+    #test_tracking_input(cropped_clip, cropped_target)
     return cropped_clip, cropped_target
 
 
@@ -225,6 +229,19 @@ def get_tracking_memorize_batch():
         assert(clips.shape[3] == 3)
 
     return clips, tgts
+
+
+def test_tracking_input(frame, tgt, rel=True):
+    xsf = c.TRAIN_WIDTH if rel else 1.0
+    ysf = c.TRAIN_HEIGHT if rel else 1.0
+
+    plt.imshow(frame, interpolation='nearest')
+    plt.scatter(tgt[0]*xsf, tgt[1]*ysf, marker='o',
+                color='b', edgecolor='k',
+                label="{:.3f}, {:.3f}, {:.3f}".format(*tgt))
+    plt.legend()
+    plt.show()
+
 
 
 def get_tracking_train_batch():
@@ -274,7 +291,7 @@ def get_tracking_test_batch(batch_size, image=None):
 
     _imgs, _img_tgts, _img_path = get_full_tracked_frame(c.TRAIN_DIR,
                                                          image=image)
-    img, img_tgt = _imgs[0], _img_tgts[0]
+    img, img_tgt = _imgs, _img_tgts
 
     batch_index = 0
     info_batch = np.zeros([c.BATCH_SIZE, 2])
@@ -294,8 +311,8 @@ def get_tracking_test_batch(batch_size, image=None):
             cropped_clip = img[crop_y:crop_y + c.TRAIN_HEIGHT,
                                crop_x:crop_x + c.TRAIN_WIDTH, :]
 
-            tgt_x_pct = (img_tgt[-1, 0] - crop_x)/c.TRAIN_WIDTH
-            tgt_y_pct = (img_tgt[-1, 1] - crop_y)/c.TRAIN_HEIGHT
+            tgt_x_pct = (img_tgt[0] - crop_x)/c.TRAIN_WIDTH
+            tgt_y_pct = (img_tgt[1] - crop_y)/c.TRAIN_HEIGHT
             tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
             tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
 
@@ -331,10 +348,10 @@ def get_tracking_test_batch(batch_size, image=None):
         cropped_clip = img[crop_y:crop_y + c.TRAIN_HEIGHT,
                            crop_x:crop_x + c.TRAIN_WIDTH, :]
 
-        tgt_x_pct = (img_tgt[-1, 0] - crop_x) / c.TRAIN_WIDTH
-        tgt_y_pct = (img_tgt[-1, 1] - crop_y) / c.TRAIN_HEIGHT
-        tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
-        tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
+        tgt_x_pct = (img_tgt[0] - crop_x) / c.TRAIN_WIDTH
+        tgt_y_pct = (img_tgt[1] - crop_y) / c.TRAIN_HEIGHT
+        tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1. else 0.
+        tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1. else 0.
 
         cropped_target = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
 

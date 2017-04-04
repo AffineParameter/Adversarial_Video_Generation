@@ -149,7 +149,7 @@ MODEL_SAVE_FREQ = 200  # how often to save the model, in # steps
 # whether to use adversarial training vs. basic training of the generator
 ADVERSARIAL = True
 # the training minibatch size
-BATCH_SIZE = 16
+BATCH_SIZE = 64
 # the number of history frames to give as input to the network
 HIST_LEN = 4
 # Frames per clip
@@ -224,6 +224,11 @@ SCALE_FC_LAYER_SIZES_D = [[512, 256, 1],
 
 # learning rate for the detection model
 LRATE_DET = 0.001
+
+# Loss weights
+DET_WGT_CAT = 1.0
+DET_WGT_POS = 7.0
+
 # padding for convolutions in the detection model
 PADDING_DET = 'VALID'
 # feature maps for each convolution of each scale network in the detection model
