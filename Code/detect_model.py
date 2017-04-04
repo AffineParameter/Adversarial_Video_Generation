@@ -135,7 +135,9 @@ class DetectionModel:
                     self.cat_loss = cat_loss(self.preds, self.labels)
                     self.pos_x_loss = pos_x_loss(self.preds, self.labels)
                     self.pos_y_loss = pos_y_loss(self.preds, self.labels)
-                    self.global_loss = trk_loss(self.preds, self.labels)
+                    self.global_loss = trk_loss(self.preds, self.labels,
+                                                wgt_cat=c.DET_WGT_CAT,
+                                                wgt_pos=c.DET_WGT_POS)
                     self.summaries = [
                         tf.summary.scalar('cat_loss', self.cat_loss),
                         tf.summary.scalar('pos_x_loss', self.pos_x_loss),
@@ -155,7 +157,9 @@ class DetectionModel:
                     self.test_cat_loss = cat_loss(self.preds, self.labels)
                     self.test_pos_x_loss = pos_x_loss(self.preds, self.labels)
                     self.test_pos_y_loss = pos_y_loss(self.preds, self.labels)
-                    self.test_global_loss = trk_loss(self.preds, self.labels)
+                    self.test_global_loss = trk_loss(self.preds, self.labels,
+                                                     wgt_cat=c.DET_WGT_CAT,
+                                                     wgt_pos=c.DET_WGT_POS)
                     self.test_summaries = [
                         tf.summary.scalar('cat_loss', self.test_cat_loss),
                         tf.summary.scalar('pos_x_loss', self.test_pos_x_loss),
