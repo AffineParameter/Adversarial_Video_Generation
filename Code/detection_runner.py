@@ -97,6 +97,10 @@ class DetectionRunner:
             if self.global_step % c.TEST_FREQ == 0:
                 self.test()
 
+    def track(self, in_dir, out_dir):
+
+        self.detect_model.render_production_images(in_dir, out_dir, lim=120)
+
 
 
 def usage():
@@ -126,12 +130,14 @@ def main():
     test_only = False
     memorize = False
     num_steps = 1000001
+    render_in = render_out = None
     try:
         opts, _ = getopt.getopt(sys.argv[1:], 'l:t:r:a:n:s:OTH',
                                 ['load_path=', 'test_dir=', 'recursions=', 'adversarial=', 'name=',
                                  'steps=', 'overwrite', 'test_only', 'help', 'stats_freq=',
                                  'summary_freq=', 'img_save_freq=', 'test_freq=',
-                                 'model_save_freq=', 'memorize'])
+                                 'model_save_freq=', 'memorize', 'render_in=',
+                                 'render_out='])
     except getopt.GetoptError:
         usage()
         sys.exit(2)
@@ -168,10 +174,13 @@ def main():
             c.MODEL_SAVE_FREQ = int(arg)
         if opt == '--memorize':
             memorize = True
+        if opt == '--render_in':
+            render_in = arg
+        if opt == '--render_out':
+            render_out = arg
 
-    # set test frame dimensions
-    assert os.path.exists(c.TEST_DIR)
-    c.FULL_HEIGHT, c.FULL_WIDTH = c.get_test_frame_dims()
+
+
 
     ##
     # Init and run the predictor
@@ -179,12 +188,24 @@ def main():
     runner = DetectionRunner(num_steps, load_path)
 
     if memorize:
+        # set test frame dimensions
+        assert os.path.exists(c.TEST_DIR)
+        c.FULL_HEIGHT, c.FULL_WIDTH = c.get_test_frame_dims()
         runner.memorize()
 
     elif test_only:
+        # set test frame dimensions
+        assert os.path.exists(c.TEST_DIR)
+        c.FULL_HEIGHT, c.FULL_WIDTH = c.get_test_frame_dims()
         runner.test()
 
+    elif render_in and render_out:
+        runner.track(render_in, render_out)
+
     else:
+        # set test frame dimensions
+        assert os.path.exists(c.TEST_DIR)
+        c.FULL_HEIGHT, c.FULL_WIDTH = c.get_test_frame_dims()
         runner.train()
 
 

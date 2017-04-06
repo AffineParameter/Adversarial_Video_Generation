@@ -8,11 +8,12 @@ from detect_scale_model import DetScaleModel
 from loss_functions import cat_loss, pos_x_loss, pos_y_loss, trk_loss
 from tfutils import w, b
 import constants as c
-from utils import get_tracking_test_batch
+from utils import get_tracking_test_batch, get_tracking_prod_batch
 from matplotlib import pylab as plt
 import cv2
 import os
 from glob import glob
+from scipy.ndimage import imread
 
 
 # noinspection PyShadowingNames
@@ -217,7 +218,6 @@ class DetectionModel:
 
         return feed_dict
 
-
     def train_step(self, batch_c, batch_t):
         """
         Runs a training step using the global loss on each of the scale networks.
@@ -283,13 +283,12 @@ class DetectionModel:
             with writer.saving(fig, os.path.join(save_dir, 'animation.mp4'),
                                100):
                 for f in files[r:r+c.NUM_FRAMES_PER_CLIP]:
-                    self.gen_image(ax, f, writer=writer)
+                    self.gen_test_image(ax, f, writer=writer)
 
             plt.close(fig)
             print("Images Saved!...")
 
         return global_step
-
 
     def test_step(self, global_step):
         """
@@ -334,6 +333,49 @@ class DetectionModel:
         print('  pix acc_top3 : %f' % (min_dr_n[2],))
         self.summary_writer.add_summary(summaries, global_step)
 
+    def render_validation_images(self, in_dir, out_path):
+        FFMpegWriter = manimation.writers['ffmpeg']
+        metadata = dict(title='Target Validation', artist='Matplotlib')
+        writer = FFMpegWriter(fps=10, metadata=metadata)
+        fig, ax = plt.subplots(1, 1)
+        fig.suptitle(
+            'GAN-Tracker Validation: {} Iterations'.format(self.global_step))
+
+        with writer.saving(fig, os.path.join(out_path, 'tracked.mp4'),
+                           100):
+
+            images = sorted(glob(os.path.join(in_dir, '*')))
+            for f in images:
+                self.gen_test_image(ax, f, top_n=1, writer=writer)
+
+
+        plt.close(fig)
+        print("Images Saved!...")
+
+    def render_production_images(self, in_dir, out_path, lim=None):
+        import time
+        FFMpegWriter = manimation.writers['ffmpeg']
+        metadata = dict(title='Production', artist='Matplotlib')
+        writer = FFMpegWriter(fps=10, metadata=metadata)
+        fig, ax = plt.subplots(1, 1)
+        with writer.saving(fig, os.path.join(out_path, 'prod_tracked.mp4'),
+                           100):
+
+            images = sorted(glob(os.path.join(in_dir, '*')))
+            if lim is not None:
+                images = images[:lim]
+
+            n = len(images)
+            s = time.time()
+            for i, f in enumerate(images):
+                if i % 10 == 0 and i != 0:
+                    print("{}/{} complete, fps={}".format(i, n,
+                                                          (time.time()-s)/i))
+                self.gen_image(ax, f, writer=writer)
+
+        plt.close(fig)
+        print("Images Saved!...")
+
     def test_image(self, img, top_n=1):
 
         img_crop_info, img_crops, img_crop_tgts, _img_path, _img_tgt = \
@@ -353,8 +395,22 @@ class DetectionModel:
                 )
 
         # Descending sort by confidence
-        return sorted(targets, key=lambda x: -x[2])[:top_n], \
-               _img_tgt, img_crop_info
+        return sorted(targets, key=lambda x: -x[2])[:top_n], _img_tgt, img_crop_info
+
+    def prod_image(self, img):
+        img_crop_info, img_crops = get_tracking_prod_batch(c.BATCH_SIZE, img)
+
+        x, y, con = 0, 0, 0
+        for crop, crop_info in zip(img_crops, img_crop_info):
+            feed_dict = self.build_feed_dict(crop, np.zeros([c.BATCH_SIZE, 3]))
+            preds = self.sess.run([self.preds], feed_dict=feed_dict)[0]
+            for j, p in enumerate(preds):
+                if p[2] > con:
+                    x = p[0] * c.TRAIN_WIDTH + crop_info[j][0]
+                    y = p[1] * c.TRAIN_HEIGHT + crop_info[j][1]
+                    con = p[2]
+
+        return x, y, con
 
     def get_pix_accuracy(self, dir, top_n=1):
         ep_dir = np.random.choice(glob(os.path.join(dir, "*")), 1)[0]
@@ -376,9 +432,9 @@ class DetectionModel:
 
         return mean_distances
 
-    def gen_image(self, ax, img, dir="./", writer=None):
+    def gen_test_image(self, ax, img, dir="./", writer=None, top_n=3):
 
-        targets, _img_tgt, img_crops = self.test_image(img, top_n=3)
+        targets, _img_tgt, img_crops = self.test_image(img, top_n=top_n)
         img_bgr = cv2.imread(img, 1)
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         ax.clear()
@@ -389,15 +445,20 @@ class DetectionModel:
         ax.scatter(_img_tgt[0], _img_tgt[1],
                    marker='o', color='blue', edgecolor='black',
                    label="GT")
+
         ax.scatter(targets[0][0], targets[0][1],
                    marker='x', color='green',
                    label="C:{:.2f}".format(targets[0][2]))
-        ax.scatter(targets[1][0], targets[1][1],
-                   marker='x', color='orange',
-                   label="C:{:.2f}".format(targets[1][2]))
-        ax.scatter(targets[2][0], targets[2][1],
-                   marker='x', color='red',
-                   label="C:{:.2f}".format(targets[2][2]))
+
+        if top_n > 1:
+            ax.scatter(targets[1][0], targets[1][1],
+                       marker='x', color='orange',
+                       label="C:{:.2f}".format(targets[1][2]))
+
+        if top_n > 2:
+            ax.scatter(targets[2][0], targets[2][1],
+                       marker='x', color='red',
+                       label="C:{:.2f}".format(targets[2][2]))
         ax.legend()
 
         if writer is None:
@@ -411,3 +472,24 @@ class DetectionModel:
             writer.grab_frame()
 
         # get num_clips random episodes
+
+    def gen_image(self, ax, img, dir="./", writer=None):
+
+        img_rgb = imread(img, mode='RGB')
+        x, y, con = self.prod_image(img_rgb)
+
+        ax.clear()
+        ax.imshow(img_rgb, interpolation='nearest')
+        ax.scatter([x], [y],
+                   marker='o', color='green',
+                   s=80./con, facecolors='none', edgecolors='red',
+                   label="C:{:.2f}".format(con))
+        ax.legend()
+
+        if writer is None:
+            basename, ext = os.path.splitext(img)
+            name = os.path.basename(basename)
+            out_path = os.path.join(dir, "trk_" + name + ".png")
+            plt.gcf().savefig(out_path)
+        else:
+            writer.grab_frame()

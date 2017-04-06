@@ -109,10 +109,10 @@ def get_full_tracked_frame(data_dir, image=None):
     )
 
     # get num_clips random episodes
-    ep_dir = np.random.choice(glob(os.path.join(data_dir, "*")), 1)[0]
-
     if image is not None:
         ep_dir = os.path.dirname(image)
+    else:
+        ep_dir = np.random.choice(glob(os.path.join(data_dir, "*")), 1)[0]
 
 
     # Load frame target information
@@ -364,6 +364,62 @@ def get_tracking_test_batch(batch_size, image=None):
     img_crop_tgts.append(tgt_batch)
 
     return img_crop_info, img_crops, img_crop_tgts, _img_path, img_tgt
+
+
+def get_tracking_prod_batch(batch_size, image):
+    img_crop_info = []
+    img_crops = []
+
+    norm_frame = normalize_frames(image)
+    frame_array = norm_frame
+
+    batch_index = 0
+    info_batch = np.zeros([c.BATCH_SIZE, 2])
+    img_batch = np.zeros([c.BATCH_SIZE, c.TRAIN_HEIGHT,
+                          c.TRAIN_WIDTH, 3], dtype=np.float32)
+
+    for crop_x in range(0, c.FULL_WIDTH, c.TRAIN_WIDTH):
+        if crop_x > c.FULL_WIDTH - c.TRAIN_WIDTH:
+            crop_x = c.FULL_WIDTH - c.TRAIN_WIDTH
+
+        for crop_y in range(0, c.FULL_HEIGHT, c.TRAIN_HEIGHT):
+            if crop_y > c.FULL_HEIGHT - c.TRAIN_HEIGHT:
+                crop_y = c.FULL_HEIGHT - c.TRAIN_HEIGHT
+
+            crop_info = [crop_x, crop_y]
+            cropped_clip = frame_array[crop_y:crop_y + c.TRAIN_HEIGHT,
+                                       crop_x:crop_x + c.TRAIN_WIDTH, :]
+
+            if batch_index < batch_size:
+                info_batch[batch_index] = crop_info
+                img_batch[batch_index] = cropped_clip
+
+            if batch_index >= batch_size:
+                img_crop_info.append(info_batch)
+                img_crops.append(img_batch)
+
+                batch_index = 0
+                info_batch = np.zeros([c.BATCH_SIZE, 2])
+                img_batch = np.zeros([c.BATCH_SIZE, c.TRAIN_HEIGHT,
+                                      c.TRAIN_WIDTH, 3], dtype=np.float32)
+
+                info_batch[batch_index] = crop_info
+                img_batch[batch_index] = cropped_clip
+
+            batch_index += 1
+
+    # Fill the remaining elements in this batch with random crops!
+    for i in range(batch_index, batch_size):
+        crop_x = np.random.choice(c.FULL_WIDTH - c.TRAIN_WIDTH + 1)
+        crop_y = np.random.choice(c.FULL_HEIGHT - c.TRAIN_HEIGHT + 1)
+        info_batch[i] = [crop_x, crop_y]
+        img_batch[i] = frame_array[crop_y:crop_y + c.TRAIN_HEIGHT,
+                                   crop_x:crop_x + c.TRAIN_WIDTH, :]
+
+    img_crop_info.append(info_batch)
+    img_crops.append(img_batch)
+
+    return img_crop_info, img_crops
 
 
 def get_test_batch(test_batch_size, num_rec_out=1):
