@@ -141,7 +141,7 @@ def get_full_tracked_frame(data_dir, image=None):
     frame = imread(frame_path, mode='RGB')
     norm_frame = normalize_frames(frame)
     frame_array[:, :, :] = norm_frame
-    targets[:] = frame_targets[frame_idx][1]
+    targets[:] = [frame_targets[frame_idx][1], frame_targets[frame_idx][2]]
 
     assert(targets[0] < c.FULL_WIDTH)
     assert(targets[1] < c.FULL_HEIGHT)
@@ -183,13 +183,40 @@ def process_tracking_clip():
     frame, tgt, path = get_full_tracked_frame(c.TRAIN_DIR)
     #test_tracking_input(frame, tgt.tolist() + [1.0], rel=False)
 
-    # Randomly crop the clip. With 0.50 probability, take the first crop
+    # Randomly crop the clip. With 0.30 probability, take the first crop
     # offered, otherwise, repeat until we have a clip with the target in it
-    target_present = np.random.choice(2, p=[0.50, 0.50])
-    cropped_clip = np.empty([c.TRAIN_HEIGHT, c.TRAIN_WIDTH, 3 * (c.HIST_LEN)])
+    target_present = np.random.choice(2, p=[0.50, .50])
     cropped_target = np.empty([3], dtype=np.float32)
 
-    for i in range(100):  # cap at 100 trials
+    if target_present:
+
+        x, y = tgt[0], tgt[1]
+
+        dx = x + np.random.uniform(c.TRAIN_WIDTH - 1)
+        dy = y + np.random.uniform(c.TRAIN_HEIGHT - 1)
+
+        if dx > c.FULL_WIDTH:
+            dx = c.FULL_WIDTH
+
+        if dy > c.FULL_HEIGHT:
+            dy = c.FULL_HEIGHT
+
+        crop_x = int(max(0, dx - c.TRAIN_WIDTH))
+        crop_y = int(max(0, dy - c.TRAIN_HEIGHT))
+
+        cropped_clip = frame[crop_y:crop_y + c.TRAIN_HEIGHT,
+                             crop_x:crop_x + c.TRAIN_WIDTH,
+                       :]
+
+        tgt_x_pct = (tgt[0] - crop_x)/c.TRAIN_WIDTH
+        tgt_y_pct = (tgt[1] - crop_y)/c.TRAIN_HEIGHT
+        tgt_x_cnf = 1. if 0.0 <= tgt_x_pct <= 1.0 else 0.
+        tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
+
+        cropped_target[:] = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
+
+    else:
+
         crop_x = np.random.choice(c.FULL_WIDTH - c.TRAIN_WIDTH + 1)
         crop_y = np.random.choice(c.FULL_HEIGHT - c.TRAIN_HEIGHT + 1)
         cropped_clip = frame[crop_y:crop_y + c.TRAIN_HEIGHT,
@@ -201,9 +228,6 @@ def process_tracking_clip():
         tgt_y_cnf = 1. if 0.0 <= tgt_y_pct <= 1.0 else 0.
 
         cropped_target[:] = [tgt_x_pct, tgt_y_pct, tgt_x_cnf * tgt_y_cnf]
-
-        if target_present and tgt_x_cnf * tgt_y_cnf:
-            break
 
     #test_tracking_input(cropped_clip, cropped_target)
     return cropped_clip, cropped_target
@@ -261,6 +285,8 @@ def get_tracking_train_batch():
 
         clips[i] = np.load(c_path)['arr_0']
         tgts[i] = np.load(t_path)['arr_0']
+
+        #test_tracking_input(clips[i], tgts[i])
 
         assert(clips.shape[3] == 3)
 

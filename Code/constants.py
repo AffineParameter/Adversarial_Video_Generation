@@ -227,7 +227,7 @@ LRATE_DET = 0.0001
 
 # Loss weights
 DET_WGT_CAT = 1.0
-DET_WGT_POS = 4.0
+DET_WGT_POS = 8.0
 
 # padding for convolutions in the detection model
 PADDING_DET = 'VALID'
