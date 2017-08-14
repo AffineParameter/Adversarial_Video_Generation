@@ -149,7 +149,7 @@ MODEL_SAVE_FREQ = 200  # how often to save the model, in # steps
 # whether to use adversarial training vs. basic training of the generator
 ADVERSARIAL = True
 # the training minibatch size
-BATCH_SIZE = 64
+BATCH_SIZE = 448 
 # the number of history frames to give as input to the network
 HIST_LEN = 4
 # Frames per clip

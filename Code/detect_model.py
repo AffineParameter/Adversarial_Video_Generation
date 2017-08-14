@@ -252,14 +252,14 @@ class DetectionModel:
         ##
 
         if global_step % c.STATS_FREQ == 0:
-            min_dr_n = self.get_pix_accuracy(c.TRAIN_DIR, top_n=3)
+            #min_dr_n = self.get_pix_accuracy(c.TRAIN_DIR, top_n=3)
             print('DetectionModel: step %d | global loss: %f' % (global_step, global_loss))
             print('  cat loss     : %f' % (cat_loss,))
             print('  pos x loss   : %f' % (pos_x_loss,))
             print('  pos y loss   : %f' % (pos_y_loss,))
-            print('  pix acc_top1 : %f' % (min_dr_n[0],))
-            print('  pix acc_top2 : %f' % (min_dr_n[1],))
-            print('  pix acc_top3 : %f' % (min_dr_n[2],))
+            #print('  pix acc_top1 : %f' % (min_dr_n[0],))
+            #print('  pix acc_top2 : %f' % (min_dr_n[1],))
+            #print('  pix acc_top3 : %f' % (min_dr_n[2],))
         if global_step % c.SUMMARY_FREQ == 0:
             print('DetectionModel: saved summaries')
             self.summary_writer.add_summary(summaries, global_step)
@@ -415,9 +415,9 @@ class DetectionModel:
     def get_pix_accuracy(self, dir, top_n=1):
         ep_dir = np.random.choice(glob(os.path.join(dir, "*")), 1)[0]
         files = sorted(glob(os.path.join(ep_dir, '*')))
-        r = np.random.choice(len(files) - c.NUM_TEST_FRAMES)
+        r = np.random.choice(len(files) - 3)
         results = []
-        for f in files[r:r + c.NUM_TEST_FRAMES]:
+        for f in files[r:r + 3]:
             results.append(self.test_image(f, top_n=top_n)[0:2])
 
         mean_distances = [0] * top_n
